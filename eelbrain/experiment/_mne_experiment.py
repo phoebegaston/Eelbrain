@@ -1250,6 +1250,61 @@ class MneExperiment(FileTree):
             self.make_bad_channels(())
             return []
 
+    def _load_cluster_trial_data(self, subject, test, tstart, tstop, pmin,
+                                 cluster_pmin=0.05, parc=None, mask=None,
+                                 sns_baseline=True, src_baseline=None,
+                                 epoch_inv=None, **kwargs):
+        """Load clusters from a test
+
+        Parameters
+        ----------
+        test, tstart, tstop, pmin
+            Test parameters.
+        cluster_pmin : float
+            Which clusters to load. Use a list of int to specify clusters by
+            their ID. Use a float to return all clusters with p-value equal
+            or smaller than that value. None to return all clusters (default).
+        parc, mask, sns_baseline, src_baseline
+            Test parameters.
+        """
+        if pmin is None or isinstance(pmin, basestring):
+            raise NotImplementedError
+        with self._temporary_state:
+            # load cluster
+            res = self.load_test(test, tstart, tstop, pmin, parc, mask, 1,
+                                 'src', sns_baseline, src_baseline, **kwargs)
+            clusters = res.find_clusters(cluster_pmin, True)
+            clusters['index'] = clusters.eval("cluster != 0")
+            if 'effect' in clusters:
+                clusters['name'] = ['%s%s' % (clusters[i, 'effect'].replace(' ', '_'), clusters[i, 'id'])
+                                    for i in xrange(clusters.n_cases)]
+            else:
+                clusters['name'] = ['c%s' % clusters[i, 'id']
+                                    for i in xrange(clusters.n_cases)]
+
+            # load single trial data
+            if epoch_inv:
+                self.set(inv=epoch_inv)
+            subject, group = self._process_subject_arg(subject, {})
+
+            dss = []
+            if group is None:
+                subjects  = (subject,)
+            else:
+                subjects = self._get_group_members(group)
+
+            for subject in subjects:
+                logger.info("Loading single trial data for %s...", subject)
+                ds = self.load_epochs_stc(subject, sns_baseline, src_baseline,
+                                          morph=True)
+                src = ds.pop('srcm')
+                for c in clusters.itercases():
+                    ds[c['name']] = src.mean(c['index'])
+                dss.append(ds)
+                del src
+
+        return combine(dss)
+
     def load_cov(self, **kwargs):
         """Load the covariance matrix
 
