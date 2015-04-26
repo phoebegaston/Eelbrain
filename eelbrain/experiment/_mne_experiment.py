@@ -1253,7 +1253,7 @@ class MneExperiment(FileTree):
     def _load_cluster_trial_data(self, subject, test, tstart, tstop, pmin,
                                  cluster_pmin=0.05, parc=None, mask=None,
                                  sns_baseline=True, src_baseline=None,
-                                 epoch_inv=None, **kwargs):
+                                 data='src', epoch_inv=None, **kwargs):
         """Load clusters from a test
 
         Parameters
@@ -1272,7 +1272,7 @@ class MneExperiment(FileTree):
         with self._temporary_state:
             # load cluster
             res = self.load_test(test, tstart, tstop, pmin, parc, mask, 1,
-                                 'src', sns_baseline, src_baseline, **kwargs)
+                                 data, sns_baseline, src_baseline, **kwargs)
             clusters = res.find_clusters(cluster_pmin, True)
             clusters['index'] = clusters.eval("cluster != 0")
             if 'effect' in clusters:
@@ -1283,25 +1283,30 @@ class MneExperiment(FileTree):
                                     for i in xrange(clusters.n_cases)]
 
             # load single trial data
-            if epoch_inv:
+            if data == 'src' and epoch_inv:
                 self.set(inv=epoch_inv)
             subject, group = self._process_subject_arg(subject, {})
 
             dss = []
             if group is None:
-                subjects  = (subject,)
+                subjects = (subject,)
             else:
                 subjects = self._get_group_members(group)
 
             for subject in subjects:
                 logger.info("Loading single trial data for %s...", subject)
-                ds = self.load_epochs_stc(subject, sns_baseline, src_baseline,
-                                          morph=True)
-                src = ds.pop('srcm')
+                if data == 'src':
+                    ds = self.load_epochs_stc(subject, sns_baseline, src_baseline,
+                                              morph=True)
+                    y = ds.pop('srcm')
+                else:
+                    ds = self.load_epochs(subject, sns_baseline)
+                    y = ds.pop('sns')
+
                 for c in clusters.itercases():
-                    ds[c['name']] = src.mean(c['index'])
+                    ds[c['name']] = y.mean(c['index'])
                 dss.append(ds)
-                del src
+                del y
 
         return combine(dss)
 
